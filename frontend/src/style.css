@@ -1,0 +1,25 @@
+/* 全局样式 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+}
+
+#app {
+  min-height: 100vh;
+  background: linear-gradient(160deg, #fef9e7 0%, #ffe8d6 100%);
+  color: #4a3b2a;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+}

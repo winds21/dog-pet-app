@@ -1,0 +1,20 @@
+{
+  "name": "dog-pet-backend",
+  "version": "1.0.0",
+  "description": "狗狗养成互动项目 - Node.js + Express 后端",
+  "main": "src/app.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "node --watch src/app.js",
+    "init-db": "node src/init-db.js",
+    "upgrade-db": "node scripts/upgrade-db.js",
+    "diagnose": "node src/diagnose-db.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "mysql2": "^3.11.0"
+  }
+}

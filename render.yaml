@@ -1,0 +1,24 @@
+# Render.com 部署配置
+# 文档: https://docs.render.com/render-yaml
+
+services:
+  # 后端 API + 前端静态站点
+  - type: web
+    name: dog-pet-app
+    runtime: node
+    region: singapore  # 亚洲节点，延迟更低
+    plan: free
+    maxInstances: 1
+    buildCommand: |
+      # 1. 安装后端依赖
+      cd backend && npm install
+      # 2. 安装前端依赖并构建
+      cd ../frontend && npm install && npm run build
+    startCommand: |
+      cd backend && node src/app.js
+    env:
+      - key: NODE_VERSION
+        value: "20"
+      - key: PORT
+        value: "3000"
+    healthCheckPath: /api/health
