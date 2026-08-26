@@ -1,10 +1,10 @@
-// 认证 API
+// 认证 API（v2 - 修复双重路径 bug）
 import axios from 'axios';
 
-const DEFAULT_PROD_BACKEND = 'https://dog-pet-app-production-8743.up.railway.app';
-
+// 直接硬编码，不依赖 config.js，避免 baseURL 拼接错误
+// 开发环境留空走 vite proxy，生产环境直接指向 Railway 后端
 const isDev = import.meta.env.DEV;
-const BACKEND = import.meta.env.VITE_API_BASE_URL || (isDev ? '' : DEFAULT_PROD_BACKEND);
+const BACKEND = isDev ? '' : 'https://dog-pet-app-production-8743.up.railway.app';
 const BASE_URL = `${BACKEND}/api/auth`;
 
 const api = axios.create({
