@@ -1,7 +1,8 @@
 // 日记 API
 import axios from 'axios';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+const BACKEND = import.meta.env.VITE_API_BASE_URL || '';
+const API_BASE = `${BACKEND}/api/diary`;
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -21,10 +22,9 @@ api.interceptors.request.use((config) => {
 // 获取今天的日记
 export const getTodayDiary = async () => {
   try {
-    const response = await api.get('/api/diary/today');
+    const response = await api.get('/today');
     return response.data.diary;
   } catch (error) {
-    // 如果 404，可能还没有日记
     if (error.response?.status === 404) {
       return null;
     }
@@ -34,13 +34,13 @@ export const getTodayDiary = async () => {
 
 // 强制重新生成今天的日记
 export const generateTodayDiary = async () => {
-  const response = await api.post('/api/diary/generate');
+  const response = await api.post('/generate');
   return response.data.diary;
 };
 
 // 获取日记列表（分页）
 export const getDiaryList = async (page = 1, pageSize = 5) => {
-  const response = await api.get('/api/diary/list', {
+  const response = await api.get('/list', {
     params: { page, pageSize }
   });
   return response.data;
