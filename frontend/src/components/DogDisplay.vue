@@ -22,7 +22,19 @@
       <div class="dog-svg-wrapper" :key="animationKey">
         <!-- SVG 卡通狗狗 -->
         <svg viewBox="0 0 200 220" width="180" height="200" class="dog-svg">
-          <!-- 身体 -->
+          <!-- 披风（穿在身体后面，最先渲染） -->
+          <g v-if="skin === 'cape'" class="cape">
+            <!-- 披风主体 -->
+            <path d="M 60 130 Q 40 165 50 210 L 100 200 L 150 210 Q 160 165 140 130 Z" fill="#E63946" />
+            <!-- 披风内里（浅色） -->
+            <path d="M 70 135 Q 60 165 65 200 L 100 195 L 135 200 Q 140 165 130 135 Z" fill="#F1A7B0" opacity="0.7" />
+            <!-- 披风领口 -->
+            <ellipse cx="100" cy="132" rx="35" ry="6" fill="#C1121F" />
+            <!-- 披风 logo：小星星 -->
+            <path d="M 100 165 L 103 172 L 110 173 L 105 178 L 106 185 L 100 181 L 94 185 L 95 178 L 90 173 L 97 172 Z" fill="#FFD60A" />
+          </g>
+
+          <!-- 身体阴影 -->
           <ellipse cx="100" cy="190" rx="55" ry="18" fill="#D2A679" opacity="0.3"/>
           
           <!-- 头 -->
@@ -37,6 +49,20 @@
           <!-- 耳朵内部 -->
           <path d="M 50 75 Q 45 65 53 55 Q 60 65 58 78 Z" fill="#E8B885"/>
           <path d="M 150 75 Q 155 65 147 55 Q 140 65 142 78 Z" fill="#E8B885"/>
+          
+          <!-- 帽子（戴在头顶，最后渲染） -->
+          <g v-if="skin === 'hat'" class="hat">
+            <!-- 帽檐 -->
+            <ellipse cx="100" cy="55" rx="48" ry="8" fill="#3D2C1E" />
+            <!-- 帽身 -->
+            <path d="M 70 55 Q 70 30 100 28 Q 130 30 130 55 Z" fill="#5C3D2E" />
+            <!-- 帽身高光 -->
+            <path d="M 78 50 Q 80 35 95 33" stroke="#7A5240" stroke-width="3" fill="none" stroke-linecap="round" />
+            <!-- 帽带 -->
+            <rect x="70" y="48" width="60" height="6" fill="#8B5A2B" />
+            <!-- 帽带小装饰 -->
+            <circle cx="100" cy="51" r="3" fill="#FFD700" />
+          </g>
           
           <!-- 眼睛 -->
           <g class="eyes">
@@ -91,7 +117,8 @@ const props = defineProps({
   effects: { type: Array, default: () => [] },
   winking: { type: Boolean, default: false },
   bubbleVisible: { type: Boolean, default: false },
-  bubbleText: { type: String, default: '' }
+  bubbleText: { type: String, default: '' },
+  skin: { type: String, default: 'default' }
 });
 
 // 根据状态综合判断心情
@@ -155,7 +182,7 @@ const actionClass = computed(() => {
 
 // 动画 key（强制重新播放 CSS 动画）
 const animationKey = computed(() => {
-  return `${moodClass.value}-${props.winking ? 'wink' : 'normal'}`;
+  return `${moodClass.value}-${props.winking ? 'wink' : 'normal'}-${props.skin}`;
 });
 </script>
 
@@ -262,6 +289,28 @@ const animationKey = computed(() => {
 @keyframes tearFall {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(5px); }
+}
+
+/* 帽子：随风轻微摇摆 */
+.hat {
+  animation: hatSway 2.5s ease-in-out infinite;
+  transform-origin: 100px 55px;
+}
+
+@keyframes hatSway {
+  0%, 100% { transform: rotate(-1.5deg); }
+  50% { transform: rotate(1.5deg); }
+}
+
+/* 披风：随身体浮动而飘动 */
+.cape {
+  animation: capeWave 2s ease-in-out infinite;
+  transform-origin: 100px 130px;
+}
+
+@keyframes capeWave {
+  0%, 100% { transform: skewX(-2deg) translateX(-1px); }
+  50% { transform: skewX(2deg) translateX(1px); }
 }
 
 /* 漂浮特效 */

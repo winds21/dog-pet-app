@@ -6,6 +6,9 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import petRoutes from './routes/petRoutes.js';
 import historyRoutes from './routes/historyRoutes.js';
+import authRoutes from './routes/authRoutes.js';
+import weatherRoutes from './routes/weatherRoutes.js';
+import diaryRoutes from './routes/diaryRoutes.js';
 import { initHistorySchema, snapshotToday, scheduleDailySnapshot } from './historyBootstrap.js';
 import { initDatabase } from './init-db.js';
 
@@ -20,6 +23,9 @@ app.use(cors());
 app.use(express.json());
 
 // 路由注册
+app.use('/api/auth', authRoutes);
+app.use('/api/weather', weatherRoutes);
+app.use('/api/diary', diaryRoutes);
 app.use('/api/pet', petRoutes);
 app.use('/api/pet', historyRoutes);
 app.use('/api', historyRoutes); // /api/pet/history 已注册，这里保持兼容

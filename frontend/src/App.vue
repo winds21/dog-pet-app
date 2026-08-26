@@ -1,7 +1,6 @@
 <template>
-  <PetHome />
+  <router-view />
 </template>
 
 <script setup>
-import PetHome from './views/PetHome.vue';
 </script>
