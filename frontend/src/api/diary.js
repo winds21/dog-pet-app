@@ -1,7 +1,10 @@
 // 日记 API
 import axios from 'axios';
 
-const BACKEND = import.meta.env.VITE_API_BASE_URL || '';
+const DEFAULT_PROD_BACKEND = 'https://dog-pet-app-production-8743.up.railway.app';
+
+const isDev = import.meta.env.DEV;
+const BACKEND = import.meta.env.VITE_API_BASE_URL || (isDev ? '' : DEFAULT_PROD_BACKEND);
 const API_BASE = `${BACKEND}/api/diary`;
 
 const api = axios.create({

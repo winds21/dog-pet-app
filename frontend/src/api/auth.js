@@ -1,7 +1,10 @@
 // 认证 API
 import axios from 'axios';
 
-const BACKEND = import.meta.env.VITE_API_BASE_URL || '';
+const DEFAULT_PROD_BACKEND = 'https://dog-pet-app-production-8743.up.railway.app';
+
+const isDev = import.meta.env.DEV;
+const BACKEND = import.meta.env.VITE_API_BASE_URL || (isDev ? '' : DEFAULT_PROD_BACKEND);
 const BASE_URL = `${BACKEND}/api/auth`;
 
 const api = axios.create({
