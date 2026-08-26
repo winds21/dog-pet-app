@@ -1,7 +1,7 @@
 // SQLite 数据库初始化脚本
 import db from '../src/config/db.js';
 
-const init = () => {
+export const initDatabase = () => {
   try {
     console.log('🔧 正在初始化 SQLite 数据库...');
 
@@ -49,13 +49,9 @@ const init = () => {
       console.log('  ✅ 初始数据已插入');
     }
 
-    console.log('\n🎉 SQLite 数据库初始化完成！');
-    console.log('   存储路径: 自动检测（Cyclic 持久化 / 本地 data/）');
-    console.log('   完全免费，无需任何配置');
+    console.log('🎉 SQLite 数据库初始化完成！');
   } catch (err) {
     console.error('❌ 初始化失败:', err.message);
-    process.exit(1);
+    throw err;
   }
 };
-
-init();

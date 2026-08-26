@@ -7,6 +7,7 @@ import { dirname, join } from 'path';
 import petRoutes from './routes/petRoutes.js';
 import historyRoutes from './routes/historyRoutes.js';
 import { initHistorySchema, snapshotToday, scheduleDailySnapshot } from './historyBootstrap.js';
+import { initDatabase } from './init-db.js';
 
 dotenv.config();
 
@@ -46,9 +47,15 @@ if (existsSync(frontendDist)) {
 app.listen(PORT, () => {
   console.log(`🐶 狗狗养成后端服务已启动: http://localhost:${PORT}`);
 
-  // 启动时确保历史表存在 + 立即打今日快照 + 注册每日定时任务
-  initHistorySchema();
-  snapshotToday();
-  scheduleDailySnapshot();
-  console.log('📅 历史快照已就绪，每日 00:01 自动记录');
+  // 初始化数据库（确保表存在）
+  try {
+    initDatabase();
+    // 启动时确保历史表存在 + 立即打今日快照 + 注册每日定时任务
+    initHistorySchema();
+    snapshotToday();
+    scheduleDailySnapshot();
+    console.log('📅 历史快照已就绪，每日 00:01 自动记录');
+  } catch (err) {
+    console.error('❌ 启动初始化失败:', err.message);
+  }
 });
