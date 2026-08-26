@@ -5,239 +5,310 @@
 
 ---
 
-## 一、项目技术方案
+## 一、项目概述
 
-### 1.1 技术栈总览
+一个虚拟狗狗养成互动网页。用户**注册登录**后拥有属于自己的狗狗，通过喂食、抚摸、散步、洗澡提升它的各项状态。系统会根据**当天天气**影响互动效果，每天自动生成一篇**狗狗口吻的日记**记录当天生活，还可以切换**3 套皮肤**改变外观。
 
-| 层次 | 技术 | 版本 | 说明 |
-|------|------|------|------|
-| **前端框架** | Vue 3 | ^3.4.31 | Composition API (script setup) |
-| **构建工具** | Vite | ^5.3.3 | 极速开发服务器和构建 |
-| **图表库** | ECharts | ^6.1.0 | 7 天状态折线图 |
-| **HTTP 客户端** | Axios | ^1.7.2 | 前后端 API 通信 |
-| **后端框架** | Express.js | ^4.19.2 | Node.js Web 框架 |
-| **数据库** | SQLite (better-sqlite3) | ^13.0.3 | 嵌入式数据库，零配置 |
-| **跨域处理** | CORS | ^2.8.5 | 解决前后端跨域问题 |
-| **环境变量** | dotenv | ^16.4.5 | 配置管理 |
-| **版本控制** | Git + GitHub | - | 代码管理 |
-| **前端部署** | Vercel | - | 全球 CDN，零绑卡 |
-| **后端部署** | Railway | - | Node.js 托管，免费额度 |
+### 项目分两部分完成
+1. **教程阶段**：跟着教程完成基础的 CRUD 和状态管理
+2. **自主扩展**：教程之外，自己规划并实现了认证、天气、日记、换装等功能
 
-### 1.2 项目目录结构
+---
 
-```
-dog-pet-app/
-├── frontend/                    # 前端项目
-│   ├── src/
-│   │   ├── api/                 # API 接口封装
-│   │   │   ├── config.js        # API 基础配置（支持环境变量）
-│   │   │   ├── pet.js           # 狗狗操作接口
-│   │   │   └── history.js       # 历史记录接口
-│   │   ├── components/          # 组件
-│   │   │   ├── DogDisplay.vue   # 狗狗 SVG 展示组件
-│   │   │   ├── StatusBar.vue    # 状态条组件
-│   │   │   └── WeeklyChart.vue  # 周图表组件
-│   │   └── views/
-│   │       └── PetHome.vue      # 主页面
-│   ├── vite.config.js           # Vite 配置
-│   └── vercel.json              # Vercel 部署配置
-│
-├── backend/                     # 后端项目
-│   ├── src/
-│   │   ├── config/
-│   │   │   ├── db.js            # SQLite 数据库配置
-│   │   │   └── history.js       # 历史记录模块
-│   │   ├── controllers/
-│   │   │   └── petController.js # 核心业务逻辑
-│   │   ├── routes/
-│   │   │   ├── petRoutes.js     # 狗狗操作路由
-│   │   │   └── historyRoutes.js # 历史记录路由
-│   │   ├── app.js               # Express 入口
-│   │   ├── init-db.js           # 数据库初始化
-│   │   └── historyBootstrap.js # 历史快照定时任务
-│   └── package.json
-│
-├── package.json                 # 根目录配置
-├── railway.toml                 # Railway 部署配置
-├── vercel.json                  # Vercel 部署配置
-└── .gitignore
-```
+## 二、技术栈
 
-### 1.3 数据库设计
+| 层次 | 技术 | 说明 |
+|------|------|------|
+| **前端框架** | Vue 3 | Composition API (`<script setup>`) |
+| **构建工具** | Vite | 极速开发服务器和构建 |
+| **路由** | Vue Router | 登录注册页面、路由守卫 |
+| **图表库** | ECharts | 7 天状态折线图 |
+| **HTTP 客户端** | Axios | 前后端 API 通信 + 拦截器 |
+| **后端框架** | Express.js | Node.js Web 框架 |
+| **认证** | JWT (jsonwebtoken) | 无状态身份认证 |
+| **密码加密** | bcryptjs | 加盐哈希 |
+| **数据库** | SQLite (better-sqlite3) | 嵌入式数据库，零配置 |
+| **天气 API** | Open-Meteo | 免费，无需 API Key |
+| **跨域处理** | CORS | 前后端跨域 |
+| **前端部署** | Vercel | 全球 CDN |
+| **后端部署** | Railway | Node.js 托管 |
 
-```sql
--- 狗狗当前状态表
-CREATE TABLE pet_stats (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    pet_name TEXT,                    -- 狗狗名字
-    satiety INTEGER DEFAULT 50,       -- 饱食度 (0-100)
-    happiness INTEGER DEFAULT 50,     -- 快乐度 (0-100)
-    intimacy INTEGER DEFAULT 50,      -- 亲密度 (0-100)
-    cleanliness INTEGER DEFAULT 80,    -- 清洁度 (0-100)
-    energy INTEGER DEFAULT 80,        -- 精力值 (0-100)
-    last_feed_at TEXT,                -- 上次喂食时间
-    last_pet_at TEXT,                 -- 上次抚摸时间
-    last_walk_at TEXT,                -- 上次散步时间
-    last_clean_at TEXT,               -- 上次洗澡时间
-    last_decay_at TEXT                -- 上次衰减计算时间
-);
+---
 
--- 历史记录表（每日快照）
-CREATE TABLE pet_stats_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    record_date TEXT UNIQUE,          -- 记录日期 (YYYY-MM-DD)
-    satiety INTEGER,
-    happiness INTEGER,
-    intimacy INTEGER,
-    cleanliness INTEGER,
-    energy INTEGER
-);
-```
+## 三、功能列表
 
-### 1.4 核心功能
+### 教程部分（跟着教程完成）
 
 | 功能 | 说明 |
 |------|------|
 | **5 大状态** | 饱食度、快乐度、亲密度、清洁度、精力值 |
 | **4 个操作** | 喂食🍖、抚摸🤚、散步🦮、洗澡🛁 |
-| **状态衰减** | 每 30 秒自动计算，饱食-1、快乐-1、清洁-0.5、精力+1 |
+| **状态衰减** | 每 30 秒自动计算 |
 | **冷却系统** | 喂食 10s、抚摸 5s、散步 30s、洗澡 60s |
-| **喂食惩罚** | 饱食度 >= 90 时，喂食仅+5且快乐-5 |
-| **精力惩罚** | 精力 < 20 时，散步效果减半 |
-| **心情提示** | 9 类状态共 27 条心情文案 |
-| **彩蛋系统** | 散步随机触发 3 种结果（找到骨头、捡到球、什么都没找到） |
-| **取名功能** | 支持给狗狗起名字，存到数据库 |
+| **惩罚机制** | 过饱喂食效果减半、精力不足散步效果减半 |
+| **心情提示** | 9 类状态共 27 条文案 |
+| **彩蛋系统** | 散步随机触发 3 种结果 |
+| **取名功能** | 给狗狗起名字 |
 | **周图表** | ECharts 展示 7 天状态趋势 |
-| **自动快照** | 每小时检查，00:01 自动记录当日状态 |
+| **自动快照** | 每日自动保存状态数据 |
+
+### 自主扩展（教程之外）
+
+| 功能 | 说明 |
+|------|------|
+| **🔐 用户注册登录** | JWT + bcryptjs 加密，7 天有效期 |
+| **👤 数据隔离** | 每个用户有自己的狗狗，所有查询带 user_id |
+| **路由守卫** | 未登录访问 /pet 自动跳转登录页 |
+| **Token 拦截器** | Axios 自动附加 Authorization 头 |
+| **🌤️ 天气系统** | 接入 Open-Meteo 免费 API |
+| **天气缓存** | 30 分钟内存缓存，减少 API 调用 |
+| **天气影响心情** | 晴天 ×1.5、阴天 ×1.0、雨天 ×0.5 |
+| **📖 狗狗日记** | 根据互动次数自动生成狗狗口吻日记 |
+| **日记分页** | 历史日记翻页查看 |
+| **🎨 换装系统** | 3 套皮肤（默认/戴帽子/穿披风） |
+| **SVG 动画** | 帽子摇摆、披风飘动 |
+| **乐观更新** | 切换皮肤先改 UI，失败回滚 |
 
 ---
 
-## 二、开发与部署遇到的问题
+## 四、数据库设计
 
-### 2.1 数据库选型问题
+```sql
+-- 用户表
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,        -- bcryptjs 加密
+    created_at TEXT DEFAULT (datetime('now'))
+);
 
-| 问题 | 原因 | 解决方案 |
-|------|------|----------|
-| PlanetScale 收费 | 原免费方案现在要求 $5/月 | 改用 SQLite（better-sqlite3） |
-| MySQL 连接配置复杂 | 需要用户名、密码、端口配置 | SQLite 零配置，直接文件 |
-| Railway 上 MySQL 不可用 | 免费版不支持外部数据库 | SQLite 内嵌，持久化存储 |
+-- 狗狗状态表（每用户一行）
+CREATE TABLE pet_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,           -- 外键关联 users
+    pet_name TEXT,
+    satiety INTEGER DEFAULT 50,
+    happiness INTEGER DEFAULT 50,
+    intimacy INTEGER DEFAULT 50,
+    cleanliness INTEGER DEFAULT 80,
+    energy INTEGER DEFAULT 80,
+    skin TEXT DEFAULT 'default',        -- 皮肤字段
+    today_feed_count INTEGER DEFAULT 0, -- 每日互动计数
+    today_pet_count INTEGER DEFAULT 0,
+    today_walk_count INTEGER DEFAULT 0,
+    today_clean_count INTEGER DEFAULT 0,
+    diary_date TEXT,
+    last_feed_at TEXT,
+    last_pet_at TEXT,
+    last_walk_at TEXT,
+    last_clean_at TEXT,
+    last_decay_at TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
 
-### 2.2 SQLite 迁移问题
+-- 日记表
+CREATE TABLE pet_diary (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    diary_date TEXT NOT NULL,
+    content TEXT NOT NULL,
+    mood INTEGER NOT NULL,
+    feed_count INTEGER DEFAULT 0,
+    pet_count INTEGER DEFAULT 0,
+    walk_count INTEGER DEFAULT 0,
+    clean_count INTEGER DEFAULT 0,
+    weather_type TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    UNIQUE(user_id, diary_date)         -- 每天每用户只能一篇
+);
 
-| 问题 | 原因 | 解决方案 |
-|------|------|----------|
-| 数据库表不存在 | Railway 全新环境无数据 | 启动时自动 `CREATE TABLE IF NOT EXISTS` |
-| 数据持久化 | Railway 重启会丢失数据 | 使用 `CYCLIC_STACK_DATA_PATH` 环境变量 |
-| 时间类型 | SQLite 无 DATETIME 类型 | 使用 TEXT (ISO 8601 字符串) |
-
-### 2.3 部署平台问题
-
-| 问题 | 原因 | 解决方案 |
-|------|------|----------|
-| Render 要求绑卡 | 免费版也要验证信用卡 | 改用 Vercel + Railway |
-| Cyclic.sh 无法访问 | 国内网络问题 | 改用 Railway |
-| Railway 识别不到 Node.js | 没有 package.json | 在根目录创建 package.json |
-| Railway Build Command 错误 | `cd backend && npm install` 在 backend 目录下找不到 backend | 直接用 `npm install` |
-| Vercel 构建失败 | Root Directory 没设置 | 设置为 `frontend` |
-| esbuild install scripts 被阻止 | Node 20+ 默认禁用 | 添加 `.npmrc` 配置 |
-| package.json 有 BOM | PowerShell `Set-Content` 编码问题 | 用 Write 工具重写 |
-
-### 2.4 本地开发问题
-
-| 问题 | 原因 | 解决方案 |
-|------|------|----------|
-| Git push 失败 | URL 有空格 | 修正为正确 URL |
-| Git 用户未配置 | 没有 user.name/user.email | `git config user.name` |
-| Vite 代理不生效 | API 路径问题 | 检查 `vite.config.js` proxy 配置 |
-| npm install 慢 | 国内网络 | 配置镜像源 |
-
-### 2.5 编码与部署问题
-
-| 问题 | 原因 | 解决方案 |
-|------|------|----------|
-| PowerShell `&` 操作符报错 | 命令中含特殊字符 | 用 `run_in_background` 执行 |
-| Railway 健康检查失败 | 端口问题 | 监听 `process.env.PORT` |
-| CORS 跨域 | 前后端不同域 | Express `cors()` 中间件 |
-| SQLite WAL 模式 | 并发写入问题 | `db.pragma('journal_mode = WAL')` |
-
----
-
-## 三、主要收获
-
-### 3.1 技术层面
-
-1. **全栈开发体验**
-   - 前端：Vue 3 Composition API + Vite + ECharts
-   - 后端：Express.js + SQLite + RESTful API
-   - 部署：Vercel + Railway + GitHub Actions
-
-2. **数据库知识**
-   - MySQL vs SQLite 对比
-   - SQLite WAL 模式、事务处理
-   - 嵌入式数据库的优缺点
-
-3. **部署平台对比**
-   - Vercel：前端 SPA 首选，CDN 加速
-   - Railway：后端 API 托管，支持持久化存储
-   - 其他：Render、Netlify、Cyclic.sh、Glitch
-
-4. **工程化能力**
-   - 环境变量管理（`.env`、`.env.example`）
-   - 构建配置（`vercel.json`、`railway.toml`）
-   - 代码规范（`.gitignore`、ESLint）
-
-### 3.2 问题解决能力
-
-1. **问题排查思路**
-   - 从错误信息入手，定位根因
-   - 区分"现象"和"原因"
-   - 善用日志和调试工具
-
-2. **方案评估能力**
-   - 对比不同技术方案的优缺点
-   - 考虑成本、复杂度、可维护性
-   - 快速验证可行性
-
-3. **文档阅读能力**
-   - 查阅 Vercel/Railway 官方文档
-   - 理解配置项含义
-   - 避免踩坑
-
-### 3.3 项目管理
-
-1. **迭代开发**
-   - 从简到繁，逐步添加功能
-   - 每个阶段可独立测试
-   - 小步快跑，持续交付
-
-2. **版本控制**
-   - Git 分支管理
-   - Commit message 规范
-   - 代码回滚能力
-
-3. **配置管理**
-   - 开发/测试/生产环境切换
-   - 敏感信息不入库
-   - 配置文件模板化
-
-### 3.4 最佳实践
-
-1. **零配置优先**
-   - SQLite > MySQL（无需安装配置）
-   - 环境变量 > 硬编码（灵活切换）
-
-2. **自动化部署**
-   - GitHub 推送触发自动部署
-   - 减少手动操作出错
-
-3. **错误处理**
-   - 启动时自动初始化（防御性编程）
-   - 日志清晰可查
-   - 优雅降级
+-- 历史快照表
+CREATE TABLE pet_stats_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    record_date TEXT,
+    satiety INTEGER,
+    happiness INTEGER,
+    intimacy INTEGER,
+    cleanliness INTEGER,
+    energy INTEGER,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+```
 
 ---
 
-## 四、项目链接
+## 五、项目目录结构
+
+```
+dog-pet-app/
+├── frontend/                         # 前端项目
+│   ├── src/
+│   │   ├── api/                      # API 接口封装
+│   │   │   ├── config.js            # API 基础配置
+│   │   │   ├── auth.js              # 认证 API（注册/登录）
+│   │   │   ├── pet.js               # 狗狗操作 API
+│   │   │   ├── diary.js             # 日记 API
+│   │   │   ├── history.js           # 历史 API
+│   │   │   └── weather.js           # 天气 API
+│   │   ├── components/
+│   │   │   ├── DogDisplay.vue        # 狗狗 SVG（支持 3 套皮肤）
+│   │   │   ├── StatusBar.vue         # 状态条
+│   │   │   └── WeeklyChart.vue      # 周图表
+│   │   ├── views/
+│   │   │   ├── Login.vue             # 登录页
+│   │   │   ├── Register.vue          # 注册页
+│   │   │   └── PetHome.vue            # 主页（含日记、换装）
+│   │   ├── stores/
+│   │   │   └── auth.js               # 认证状态管理
+│   │   ├── router/
+│   │   │   └── index.js              # 路由 + 路由守卫
+│   │   ├── App.vue
+│   │   └── main.js
+│   ├── vite.config.js
+│   └── vercel.json
+│
+├── backend/                          # 后端项目
+│   ├── src/
+│   │   ├── config/
+│   │   │   ├── db.js                 # SQLite 配置
+│   │   │   └── history.js            # 历史记录模块
+│   │   ├── controllers/
+│   │   │   ├── authController.js     # 注册/登录/获取用户
+│   │   │   └── petController.js      # 宠物互动 + 计数 + 换装
+│   │   ├── middleware/
+│   │   │   └── auth.js               # JWT 认证中间件
+│   │   ├── routes/
+│   │   │   ├── authRoutes.js         # /api/auth/*
+│   │   │   ├── petRoutes.js          # /api/pet/*
+│   │   │   ├── diaryRoutes.js        # /api/diary/*
+│   │   │   ├── weatherRoutes.js      # /api/weather/*
+│   │   │   └── historyRoutes.js      # /api/history/*
+│   │   ├── services/
+│   │   │   ├── diaryService.js       # 日记生成/查询
+│   │   │   └── weatherService.js     # 天气 API + 缓存
+│   │   ├── app.js                    # Express 入口
+│   │   ├── init-db.js                # 数据库初始化 + 迁移
+│   │   └── historyBootstrap.js       # 定时快照
+│   └── package.json
+│
+├── LEARNING_JOURNEY.md              # 学习过程记录
+├── REPORT_TEMPLATE.md               # 汇报话术模板
+├── DEPLOY.md                         # 部署指南
+├── railway.toml
+└── package.json                      # 根目录配置
+```
+
+---
+
+## 六、API 接口
+
+### 认证 API（无需 token）
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/auth/register` | 注册 |
+| POST | `/api/auth/login` | 登录 |
+| GET | `/api/auth/me` | 获取当前用户（需 token） |
+
+### 宠物 API（需 token）
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/pet/stats` | 获取狗狗状态 |
+| POST | `/api/pet/feed` | 喂食 |
+| POST | `/api/pet/pet` | 抚摸 |
+| POST | `/api/pet/walk` | 散步 |
+| POST | `/api/pet/clean` | 洗澡 |
+| POST | `/api/pet/rename` | 改名 |
+| POST | `/api/pet/skin` | 换皮肤 |
+
+### 日记 API（需 token）
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/diary/today` | 获取/生成今日日记 |
+| POST | `/api/diary/generate` | 强制重新生成 |
+| GET | `/api/diary/list?page=1` | 分页查询历史 |
+
+### 天气 API（无需 token）
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/weather/current` | 当前天气 |
+| GET | `/api/weather/multiplier` | 心情倍率 |
+| POST | `/api/weather/refresh` | 强制刷新缓存 |
+
+---
+
+## 七、踩坑记录
+
+### 7.1 教程阶段的问题
+
+| 问题 | 原因 | 解决方案 |
+|------|------|----------|
+| PlanetScale 收费 | 原免费方案改 $5/月 | 改用 SQLite |
+| Render 要求绑卡 | 国内银行卡不支持 | 改用 Vercel + Railway |
+| Railway 识别不到 Node.js | 没有根 package.json | 创建根目录 package.json |
+| Vercel 构建失败 | BOM 字符 / Root Directory | 重写 + 设置目录 |
+| esbuild 被阻止 | Node 20+ 默认禁用 | 添加 .npmrc |
+
+### 7.2 扩展阶段的问题
+
+| 问题 | 原因 | 解决方案 |
+|------|------|----------|
+| 线上注册失败 | API 双重路径 `/api/pet/api/auth` | 三个 API 文件独立硬编码 BACKEND |
+| Vercel 没更新代码 | Redeploy 用了构建缓存 | 推新 commit 触发部署 |
+| weatherService 用 require | 项目是 ESM | 改为顶部 import |
+| 端口占用 | 旧进程未退出 | 杀掉占用进程 |
+
+### 7.3 最难的坑：线上注册失败
+
+**现象**：Vercel 上注册一直失败，本地正常。
+
+**排查过程**（4-5 轮）：
+1. ❌ 怀疑环境变量 → 不是
+2. ❌ 怀疑代码没推 → 不是
+3. ✅ **直接下载 Vercel 构建产物读源码** → 发现 baseURL 是 `/api/pet/api/auth`
+
+**根因**：
+- `config.js` 导出 `${BACKEND}/api/pet`
+- `auth.js` import 后又拼 `/api/auth`
+- 导致双重路径 → 404
+
+**修复**：三个 API 文件各自独立硬编码 BACKEND。
+
+**教训**：不要靠猜，要拿源码证据。
+
+---
+
+## 八、主要收获
+
+### 8.1 教程部分
+1. Vue3 Composition API、`<script setup>` 语法
+2. Express 后端开发、RESTful API 设计
+3. SQLite 数据库使用
+4. 前后端联调（Axios、CORS、Vite 代理）
+
+### 8.2 扩展部分
+1. **JWT 认证**：无状态认证原理、token 签发与验证
+2. **密码安全**：bcryptjs 加盐哈希
+3. **数据隔离**：所有查询带 user_id
+4. **第三方 API 集成**：Open-Meteo 天气 API
+5. **缓存设计**：内存 Map + TTL
+6. **内容生成**：模板 + 条件分支生成有趣日记
+7. **分页查询**：LIMIT/OFFSET
+8. **SVG 绘制**：手绘礼帽、披风
+9. **CSS 动画**：@keyframes 摇摆、飘动
+10. **乐观更新**：先改 UI，失败回滚
+11. **线上问题排查**：证据驱动的系统化排查方法
+
+### 8.3 方法论
+1. **证据驱动**：不靠猜，用 HTTP 响应、源码、日志说话
+2. **分层定位**：前端 → 网络 → 后端 → 数据库，逐层排除
+3. **迭代开发**：从简到繁，小步快跑
+4. **文档先行**：先查官方文档，再动手
+
+---
+
+## 九、项目链接
 
 | 资源 | 地址 |
 |------|------|
@@ -248,39 +319,24 @@ CREATE TABLE pet_stats_history (
 
 ---
 
-## 五、可扩展方向
+## 十、可扩展方向
 
-如果继续优化，可以考虑：
-
-1. **功能增强**
-   - 多宠物支持
-   - 成就系统
-   - 每日任务
-   - 商店系统（虚拟货币）
-
-2. **数据持久化**
-   - 接入 Turso（云 SQLite，免费）
-   - 或 Railway 数据卷升级
-
-3. **用户系统**
-   - 注册登录
-   - 多用户隔离
-   - 数据备份
-
-4. **移动端适配**
-   - 响应式设计
-   - PWA 支持
-   - 小程序版本
+1. **成就系统**：完成特定操作解锁成就
+2. **多宠物支持**：每个用户可以养多只狗
+3. **移动端适配**：响应式设计、PWA
+4. **数据持久化升级**：接入 Turso（云 SQLite）
+5. **商店系统**：虚拟货币 + 道具
+6. **社交功能**：好友互访、狗狗互动
 
 ---
 
 ## 📝 总结
 
-这个项目从 0 到 1 完整实现了一个狗狗养成互动应用，覆盖了：
-- **前端开发**：Vue3 + Vite + ECharts
-- **后端开发**：Express.js + SQLite
-- **部署运维**：Vercel + Railway + GitHub
+这个项目从跟着教程做基础功能，到自己规划扩展认证、天气、日记、换装等功能，完整经历了一个产品的从 0 到 1。
 
-过程中遇到了 **数据库选型、部署配置、编码问题、跨域处理** 等实际问题，通过排查和解决，积累了宝贵的全栈开发经验。
+**教程教会了我基础**，但真正的成长来自于教程之外的扩展：
+- 主动发现问题（收费、单用户、不真实）
+- 主动设计方案（迁移、认证、天气影响）
+- 主动面对困难（线上 bug 排查）
 
-**核心收获**：遇到问题不要慌，看错误信息 → 分析原因 → 搜索文档 → 尝试方案 → 验证结果，一步一步解决！🐾
+**核心收获**：遇到问题不要慌，看错误信息 → 拿证据 → 分析原因 → 搜索文档 → 尝试方案 → 验证结果，一步一步解决！🐾
