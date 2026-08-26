@@ -1,46 +1,61 @@
-// 数据库初始化脚本：读取 .env 配置，连接 MySQL 并执行 init.sql
-// 用法：先在 .env 填好 DB_PASSWORD，然后执行  node src/init-db.js
-import mysql from 'mysql2/promise';
-import dotenv from 'dotenv';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+// SQLite 数据库初始化脚本
+import db from '../src/config/db.js';
 
-dotenv.config();
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const sqlPath = join(__dirname, '..', '..', 'database', 'init.sql');
-
-// 不指定 database，开启 multipleStatements 以便一次执行整段 SQL
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 3306,
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  multipleStatements: true
-});
-
-const run = async () => {
-  // 简单校验密码是否仍是占位符
-  if (!process.env.DB_PASSWORD || process.env.DB_PASSWORD === 'your_password_here') {
-    console.error('❌ 请先在 backend/.env 中填写真实的 DB_PASSWORD');
-    process.exit(1);
-  }
-
+const init = () => {
   try {
-    const sql = readFileSync(sqlPath, 'utf8');
-    await pool.query(sql);
-    console.log('✅ 数据库初始化成功：已创建 pet_db 库与 pet_stats 表');
+    console.log('🔧 正在初始化 SQLite 数据库...');
 
-    // 查看初始化结果
-    const [rows] = await pool.query('SELECT * FROM pet_db.pet_stats');
-    console.table(rows);
+    // 创建 pet_stats 表
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pet_stats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pet_name TEXT,
+        satiety INTEGER NOT NULL DEFAULT 50,
+        happiness INTEGER NOT NULL DEFAULT 50,
+        intimacy INTEGER NOT NULL DEFAULT 50,
+        cleanliness INTEGER NOT NULL DEFAULT 80,
+        energy INTEGER NOT NULL DEFAULT 80,
+        last_feed_at TEXT,
+        last_pet_at TEXT,
+        last_walk_at TEXT,
+        last_clean_at TEXT,
+        last_decay_at TEXT
+      )
+    `);
+    console.log('  ✅ pet_stats 表已就绪');
+
+    // 创建 pet_stats_history 表（历史记录）
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pet_stats_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        record_date TEXT NOT NULL UNIQUE,
+        satiety INTEGER NOT NULL,
+        happiness INTEGER NOT NULL,
+        intimacy INTEGER NOT NULL,
+        cleanliness INTEGER NOT NULL,
+        energy INTEGER NOT NULL
+      )
+    `);
+    console.log('  ✅ pet_stats_history 表已就绪');
+
+    // 插入初始数据（如果不存在）
+    const count = db.prepare('SELECT COUNT(*) as cnt FROM pet_stats').get().cnt;
+    if (count === 0) {
+      const insert = db.prepare(`
+        INSERT INTO pet_stats (pet_name, satiety, happiness, intimacy, cleanliness, energy, last_decay_at)
+        VALUES (?, 50, 50, 50, 80, 80, datetime('now'))
+      `);
+      insert.run(null);
+      console.log('  ✅ 初始数据已插入');
+    }
+
+    console.log('\n🎉 SQLite 数据库初始化完成！');
+    console.log('   数据库文件: data/pet.db');
+    console.log('   完全免费，无需任何配置');
   } catch (err) {
     console.error('❌ 初始化失败:', err.message);
     process.exit(1);
-  } finally {
-    await pool.end();
   }
 };
 
-run();
+init();

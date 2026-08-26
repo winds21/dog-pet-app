@@ -43,12 +43,12 @@ if (existsSync(frontendDist)) {
 }
 
 // 启动服务
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
   console.log(`🐶 狗狗养成后端服务已启动: http://localhost:${PORT}`);
 
   // 启动时确保历史表存在 + 立即打今日快照 + 注册每日定时任务
-  await initHistorySchema();
-  await snapshotToday();
+  initHistorySchema();
+  snapshotToday();
   scheduleDailySnapshot();
   console.log('📅 历史快照已就绪，每日 00:01 自动记录');
 });

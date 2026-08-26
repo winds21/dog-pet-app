@@ -1,24 +1,24 @@
-// 狗狗互动控制器：获取状态、喂食、抚摸、散步、洗澡
-import pool from '../config/db.js';
+// 狗狗互动控制器（SQLite 版本）
+import db from '../config/db.js';
 
 // 状态值上下限
 const MIN = 0;
 const MAX = 100;
-const DECAY_INTERVAL_SECONDS = 30; // 衰减间隔
-const DECAY_AMOUNT = 1; // 每次衰减量
+const DECAY_INTERVAL_MS = 30 * 1000; // 30秒
+const DECAY_AMOUNT = 1;
 
-// 互动冷却时间（秒）
+// 互动冷却时间（毫秒）
 const COOLDOWN = {
-  feed: 10,
-  pet: 5,
-  walk: 30,
-  clean: 60
+  feed: 10 * 1000,
+  pet: 5 * 1000,
+  walk: 30 * 1000,
+  clean: 60 * 1000
 };
 
 // 工具：限制数值范围
-const clamp = (v) => Math.max(MIN, Math.min(MAX, v));
+const clamp = (v) => Math.max(MIN, Math.min(MAX, Math.round(v)));
 
-// 心情留言池（扩展到所有状态）
+// 心情留言池
 const MOOD_MESSAGES = {
   highSatiety: [
     '吃得好饱，开心！',
@@ -67,116 +67,109 @@ const MOOD_MESSAGES = {
   ]
 };
 
-// 根据状态生成心情留言（优先级：低状态 > 特殊状态 > 常规状态）
+// 根据状态生成心情留言
 const generateMoodMessage = (pet) => {
   const { satiety, happiness, cleanliness, energy } = pet;
   
-  // 最低状态优先
   if (satiety < 20 && happiness < 20 && energy < 20) {
-    return MOOD_MESSAGES.low[Math.floor(Math.random() * MOOD_MESSAGES.low.length)];
+    return pick(MOOD_MESSAGES.low);
   }
   if (satiety < 30) {
-    return MOOD_MESSAGES.hungry[Math.floor(Math.random() * MOOD_MESSAGES.hungry.length)];
+    return pick(MOOD_MESSAGES.hungry);
   }
   if (energy < 20) {
-    return MOOD_MESSAGES.tired[Math.floor(Math.random() * MOOD_MESSAGES.tired.length)];
+    return pick(MOOD_MESSAGES.tired);
   }
   if (cleanliness < 30) {
-    return MOOD_MESSAGES.dirty[Math.floor(Math.random() * MOOD_MESSAGES.dirty.length)];
+    return pick(MOOD_MESSAGES.dirty);
   }
-  
-  // 高状态
   if (satiety >= 80 && happiness >= 80) {
-    return MOOD_MESSAGES.highSatiety[Math.floor(Math.random() * MOOD_MESSAGES.highSatiety.length)];
+    return pick(MOOD_MESSAGES.highSatiety);
   }
   if (happiness >= 80) {
-    return MOOD_MESSAGES.highHappiness[Math.floor(Math.random() * MOOD_MESSAGES.highHappiness.length)];
+    return pick(MOOD_MESSAGES.highHappiness);
   }
   if (cleanliness >= 90) {
-    return MOOD_MESSAGES.highClean[Math.floor(Math.random() * MOOD_MESSAGES.highClean.length)];
+    return pick(MOOD_MESSAGES.highClean);
   }
   if (energy >= 80) {
-    return MOOD_MESSAGES.highEnergy[Math.floor(Math.random() * MOOD_MESSAGES.highEnergy.length)];
+    return pick(MOOD_MESSAGES.highEnergy);
   }
-  
-  return MOOD_MESSAGES.normal[Math.floor(Math.random() * MOOD_MESSAGES.normal.length)];
+  return pick(MOOD_MESSAGES.normal);
 };
 
-// 执行状态衰减（基于时间差计算）
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+// 执行状态衰减
 const applyDecay = (pet) => {
-  const now = new Date();
-  const lastDecay = pet.last_decay_at ? new Date(pet.last_decay_at) : now;
-  const elapsedSeconds = Math.floor((now - lastDecay) / 1000);
-  const decayCount = Math.floor(elapsedSeconds / DECAY_INTERVAL_SECONDS);
+  const now = Date.now();
+  const lastDecay = pet.last_decay_at ? new Date(pet.last_decay_at).getTime() : now;
+  const elapsed = now - lastDecay;
+  const decayCount = Math.floor(elapsed / DECAY_INTERVAL_MS);
   
   if (decayCount > 0) {
-    // 每30秒衰减：饱食度-1, 愉悦度-1, 清洁度-0.5, 精力值+1
-    const decayAmount = decayCount * DECAY_AMOUNT;
-    pet.satiety = clamp(pet.satiety - decayAmount);
-    pet.happiness = clamp(pet.happiness - decayAmount);
-    pet.cleanliness = clamp(pet.cleanliness - decayAmount * 0.5);
-    pet.energy = clamp(pet.energy + decayAmount); // 精力自动恢复
-    pet.last_decay_at = now;
+    const amount = decayCount * DECAY_AMOUNT;
+    pet.satiety = clamp(pet.satiety - amount);
+    pet.happiness = clamp(pet.happiness - amount);
+    pet.cleanliness = clamp(pet.cleanliness - amount * 0.5);
+    pet.energy = clamp(pet.energy + amount);
+    pet.last_decay_at = new Date(now).toISOString();
   }
   return pet;
 };
 
-// 检查冷却是否完成
-const isCooledDown = (lastActionTime, cooldownSeconds) => {
-  if (!lastActionTime) return true;
-  const elapsed = (Date.now() - new Date(lastActionTime).getTime()) / 1000;
-  return elapsed >= cooldownSeconds;
+// 检查冷却
+const isCooledDown = (lastTime, cooldownMs) => {
+  if (!lastTime) return true;
+  return (Date.now() - new Date(lastTime).getTime()) >= cooldownMs;
 };
 
-// 计算剩余冷却时间
-const remainingCooldown = (lastActionTime, cooldownSeconds) => {
-  if (!lastActionTime) return 0;
-  const elapsed = (Date.now() - new Date(lastActionTime).getTime()) / 1000;
-  return Math.max(0, Math.ceil(cooldownSeconds - elapsed));
+const remainingCooldown = (lastTime, cooldownMs) => {
+  if (!lastTime) return 0;
+  const elapsed = Date.now() - new Date(lastTime).getTime();
+  return Math.max(0, Math.ceil((cooldownMs - elapsed) / 1000));
 };
 
-// 初始化宠物数据（确保新字段存在）
-const ensurePetInitialized = async () => {
-  const [rows] = await pool.query('SELECT * FROM pet_stats ORDER BY id LIMIT 1');
-  if (rows.length === 0) {
-    await pool.query(`
-      INSERT INTO pet_stats (pet_name, satiety, happiness, intimacy, cleanliness, energy)
-      VALUES (NULL, 50, 50, 50, 80, 80)
-    `);
-    const [r] = await pool.query('SELECT * FROM pet_stats ORDER BY id LIMIT 1');
-    return r[0];
+// 初始化宠物数据
+const ensurePetInitialized = () => {
+  let pet = db.prepare('SELECT * FROM pet_stats ORDER BY id LIMIT 1').get();
+  
+  if (!pet) {
+    const result = db.prepare(`
+      INSERT INTO pet_stats (pet_name, satiety, happiness, intimacy, cleanliness, energy, last_decay_at)
+      VALUES (?, 50, 50, 50, 80, 80, ?)
+    `).run(null, new Date().toISOString());
+    pet = db.prepare('SELECT * FROM pet_stats WHERE id = ?').get(result.lastInsertRowid);
   }
   
   // 确保新字段有默认值
-  const pet = rows[0];
-  const updates = [];
-  if (pet.cleanliness === undefined || pet.cleanliness === null) {
-    updates.push('cleanliness = 80');
+  if (pet.cleanliness === null || pet.cleanliness === undefined) {
+    pet.cleanliness = 80;
+    db.prepare('UPDATE pet_stats SET cleanliness = 80 WHERE id = ?').run(pet.id);
   }
-  if (pet.energy === undefined || pet.energy === null) {
-    updates.push('energy = 80');
-  }
-  if (updates.length > 0) {
-    await pool.query(`UPDATE pet_stats SET ${updates.join(', ')} WHERE id = ?`, [pet.id]);
-    const [r] = await pool.query('SELECT * FROM pet_stats ORDER BY id LIMIT 1');
-    return r[0];
+  if (pet.energy === null || pet.energy === undefined) {
+    pet.energy = 80;
+    db.prepare('UPDATE pet_stats SET energy = 80 WHERE id = ?').run(pet.id);
   }
   
   return pet;
 };
 
-// GET /api/pet/stats —— 获取当前狗狗状态
-export const getStats = async (req, res) => {
+// GET /api/pet/stats
+export const getStats = (req, res) => {
   try {
-    let pet = await ensurePetInitialized();
+    let pet = ensurePetInitialized();
     pet = applyDecay(pet);
     
     // 保存衰减后的状态
-    await pool.query(`
+    db.prepare(`
       UPDATE pet_stats 
       SET satiety=?, happiness=?, cleanliness=?, energy=?, last_decay_at=?
       WHERE id=?
-    `, [pet.satiety, pet.happiness, pet.cleanliness, pet.energy, pet.last_decay_at, pet.id]);
+    `).run(pet.satiety, pet.happiness, pet.cleanliness, pet.energy, pet.last_decay_at, pet.id);
+    
+    // 重新获取完整数据
+    pet = db.prepare('SELECT * FROM pet_stats WHERE id = ?').get(pet.id);
     
     const name = pet.pet_name || '';
     const message = generateMoodMessage(pet);
@@ -198,13 +191,12 @@ export const getStats = async (req, res) => {
   }
 };
 
-// POST /api/pet/feed —— 喂食
-export const feedPet = async (req, res) => {
+// POST /api/pet/feed
+export const feedPet = (req, res) => {
   try {
-    let pet = await ensurePetInitialized();
+    let pet = ensurePetInitialized();
     pet = applyDecay(pet);
     
-    // 冷却检查
     if (!isCooledDown(pet.last_feed_at, COOLDOWN.feed)) {
       const remaining = remainingCooldown(pet.last_feed_at, COOLDOWN.feed);
       return res.status(429).json({ error: `喂食冷却中，请等 ${remaining} 秒`, cooldown: remaining });
@@ -214,7 +206,6 @@ export const feedPet = async (req, res) => {
     let newSatiety;
     let newHappiness;
     
-    // 过饱惩罚：饱食度 > 90 时再喂
     if (pet.satiety >= 90) {
       newSatiety = clamp(pet.satiety + 5);
       newHappiness = clamp(pet.happiness - 5);
@@ -225,11 +216,12 @@ export const feedPet = async (req, res) => {
       message = '喂食成功，狗狗吃饱啦！';
     }
     
-    await pool.query(`
+    const now = new Date().toISOString();
+    db.prepare(`
       UPDATE pet_stats 
-      SET satiety=?, happiness=?, last_feed_at=NOW(), last_decay_at=?
+      SET satiety=?, happiness=?, last_feed_at=?, last_decay_at=?
       WHERE id=?
-    `, [newSatiety, newHappiness, pet.last_decay_at, pet.id]);
+    `).run(newSatiety, newHappiness, now, pet.last_decay_at, pet.id);
     
     pet.satiety = newSatiety;
     pet.happiness = newHappiness;
@@ -249,13 +241,12 @@ export const feedPet = async (req, res) => {
   }
 };
 
-// POST /api/pet/pet —— 抚摸
-export const petPet = async (req, res) => {
+// POST /api/pet/pet
+export const petPet = (req, res) => {
   try {
-    let pet = await ensurePetInitialized();
+    let pet = ensurePetInitialized();
     pet = applyDecay(pet);
     
-    // 冷却检查
     if (!isCooledDown(pet.last_pet_at, COOLDOWN.pet)) {
       const remaining = remainingCooldown(pet.last_pet_at, COOLDOWN.pet);
       return res.status(429).json({ error: `抚摸冷却中，请等 ${remaining} 秒`, cooldown: remaining });
@@ -263,12 +254,13 @@ export const petPet = async (req, res) => {
     
     const newHappiness = clamp(pet.happiness + 8);
     const newIntimacy = clamp(pet.intimacy + 5);
+    const now = new Date().toISOString();
     
-    await pool.query(`
+    db.prepare(`
       UPDATE pet_stats 
-      SET happiness=?, intimacy=?, last_pet_at=NOW(), last_decay_at=?
+      SET happiness=?, intimacy=?, last_pet_at=?, last_decay_at=?
       WHERE id=?
-    `, [newHappiness, newIntimacy, pet.last_decay_at, pet.id]);
+    `).run(newHappiness, newIntimacy, now, pet.last_decay_at, pet.id);
     
     pet.happiness = newHappiness;
     pet.intimacy = newIntimacy;
@@ -288,35 +280,30 @@ export const petPet = async (req, res) => {
   }
 };
 
-// POST /api/pet/walk —— 遛狗
-export const walkPet = async (req, res) => {
+// POST /api/pet/walk
+export const walkPet = (req, res) => {
   try {
-    let pet = await ensurePetInitialized();
+    let pet = ensurePetInitialized();
     pet = applyDecay(pet);
     
-    // 冷却检查
     if (!isCooledDown(pet.last_walk_at, COOLDOWN.walk)) {
       const remaining = remainingCooldown(pet.last_walk_at, COOLDOWN.walk);
       return res.status(429).json({ error: `散步冷却中，请等 ${remaining} 秒`, cooldown: remaining });
     }
     
-    // 精力不足时散步效率低
     const energyPenalty = pet.energy < 20;
     const cleanlinessDrop = energyPenalty ? 8 : 12;
     const energyDrop = energyPenalty ? 15 : 8;
     
-    // 散步消耗：清洁度下降、精力下降
     let newCleanliness = clamp(pet.cleanliness - cleanlinessDrop);
     let newEnergy = clamp(pet.energy - energyDrop);
     
-    // 随机彩蛋
     const r = Math.floor(Math.random() * 3);
     let event, message;
     let happiness = pet.happiness;
     let intimacy = pet.intimacy;
     
     if (energyPenalty) {
-      // 精力不足时散步没彩蛋
       event = 'tired';
       message = '狗狗太累了，散步没什么精神...';
       happiness = clamp(pet.happiness - 3);
@@ -333,11 +320,12 @@ export const walkPet = async (req, res) => {
       message = '今天很安静';
     }
     
-    await pool.query(`
+    const now = new Date().toISOString();
+    db.prepare(`
       UPDATE pet_stats 
-      SET happiness=?, intimacy=?, cleanliness=?, energy=?, last_walk_at=NOW(), last_decay_at=?
+      SET happiness=?, intimacy=?, cleanliness=?, energy=?, last_walk_at=?, last_decay_at=?
       WHERE id=?
-    `, [happiness, intimacy, newCleanliness, newEnergy, pet.last_decay_at, pet.id]);
+    `).run(happiness, intimacy, newCleanliness, newEnergy, now, pet.last_decay_at, pet.id);
     
     pet.happiness = happiness;
     pet.intimacy = intimacy;
@@ -360,13 +348,12 @@ export const walkPet = async (req, res) => {
   }
 };
 
-// POST /api/pet/clean —— 洗澡
-export const cleanPet = async (req, res) => {
+// POST /api/pet/clean
+export const cleanPet = (req, res) => {
   try {
-    let pet = await ensurePetInitialized();
+    let pet = ensurePetInitialized();
     pet = applyDecay(pet);
     
-    // 冷却检查
     if (!isCooledDown(pet.last_clean_at, COOLDOWN.clean)) {
       const remaining = remainingCooldown(pet.last_clean_at, COOLDOWN.clean);
       return res.status(429).json({ error: `洗澡冷却中，请等 ${remaining} 秒`, cooldown: remaining });
@@ -374,12 +361,13 @@ export const cleanPet = async (req, res) => {
     
     const newCleanliness = clamp(pet.cleanliness + 30);
     const newHappiness = clamp(pet.happiness + 5);
+    const now = new Date().toISOString();
     
-    await pool.query(`
+    db.prepare(`
       UPDATE pet_stats 
-      SET cleanliness=?, happiness=?, last_clean_at=NOW(), last_decay_at=?
+      SET cleanliness=?, happiness=?, last_clean_at=?, last_decay_at=?
       WHERE id=?
-    `, [newCleanliness, newHappiness, pet.last_decay_at, pet.id]);
+    `).run(newCleanliness, newHappiness, now, pet.last_decay_at, pet.id);
     
     pet.cleanliness = newCleanliness;
     pet.happiness = newHappiness;
@@ -399,15 +387,15 @@ export const cleanPet = async (req, res) => {
   }
 };
 
-// POST /api/pet/rename —— 起名
-export const renamePet = async (req, res) => {
+// POST /api/pet/rename
+export const renamePet = (req, res) => {
   try {
     const { name } = req.body;
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: '名字不能为空' });
     }
     const trimmedName = name.trim().slice(0, 20);
-    await pool.query('UPDATE pet_stats SET pet_name = ? ORDER BY id LIMIT 1', [trimmedName]);
+    db.prepare('UPDATE pet_stats SET pet_name = ? ORDER BY id LIMIT 1').run(trimmedName);
     res.json({ message: `取名成功！狗狗现在叫「${trimmedName}」`, pet_name: trimmedName });
   } catch (err) {
     console.error('取名失败:', err.message);

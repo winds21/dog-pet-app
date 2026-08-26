@@ -1,44 +1,26 @@
-// MySQL 数据库连接池配置
-import mysql from 'mysql2/promise';
-import dotenv from 'dotenv';
+// SQLite 数据库配置（完全免费，零配置）
+import Database from 'better-sqlite3';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-// 支持 Render 的 MYSQL_URL 环境变量（优先级最高）
-let poolConfig;
+// 数据库文件路径
+const dbPath = path.join(__dirname, '../../data/pet.db');
 
-if (process.env.MYSQL_URL) {
-  // Render 提供的 MySQL 连接字符串
-  poolConfig = process.env.MYSQL_URL;
-  console.log('🔌 使用 Render 云数据库连接');
-} else {
-  // 本地开发配置
-  poolConfig = {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT) || 3306,
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'pet_db',
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
-    charset: 'utf8mb4'
-  };
+// 确保 data 目录存在
+import fs from 'fs';
+const dataDir = path.join(__dirname, '../../data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
 }
 
-// 创建连接池
-const pool = process.env.MYSQL_URL
-  ? mysql.createPool(poolConfig)
-  : mysql.createPool(poolConfig);
+// 创建/打开数据库
+const db = new Database(dbPath);
 
-// 测试连接（仅在非 Render 环境或需要时）
-pool.getConnection()
-  .then(conn => {
-    console.log('✅ 数据库连接成功');
-    conn.release();
-  })
-  .catch(err => {
-    console.error('❌ 数据库连接失败:', err.message);
-  });
+// 启用 WAL 模式（提高并发性能）
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
 
-export default pool;
+export default db;
