@@ -1,5 +1,6 @@
-// 狗狗互动控制器（SQLite 版本）
+// 狗狗互动控制器（SQLite + 用户隔离 + 天气影响版本）
 import db from '../config/db.js';
+import { getWeatherMultiplier } from '../services/weatherService.js';
 
 // 状态值上下限
 const MIN = 0;
@@ -130,15 +131,15 @@ const remainingCooldown = (lastTime, cooldownMs) => {
   return Math.max(0, Math.ceil((cooldownMs - elapsed) / 1000));
 };
 
-// 初始化宠物数据
-const ensurePetInitialized = () => {
-  let pet = db.prepare('SELECT * FROM pet_stats ORDER BY id LIMIT 1').get();
+// 初始化宠物数据（按用户）
+const ensurePetInitialized = (userId) => {
+  let pet = db.prepare('SELECT * FROM pet_stats WHERE user_id = ?').get(userId);
   
   if (!pet) {
     const result = db.prepare(`
-      INSERT INTO pet_stats (pet_name, satiety, happiness, intimacy, cleanliness, energy, last_decay_at)
-      VALUES (?, 50, 50, 50, 80, 80, ?)
-    `).run(null, new Date().toISOString());
+      INSERT INTO pet_stats (user_id, pet_name, satiety, happiness, intimacy, cleanliness, energy, last_decay_at)
+      VALUES (?, null, 50, 50, 50, 80, 80, ?)
+    `).run(userId, new Date().toISOString());
     pet = db.prepare('SELECT * FROM pet_stats WHERE id = ?').get(result.lastInsertRowid);
   }
   
@@ -152,13 +153,55 @@ const ensurePetInitialized = () => {
     db.prepare('UPDATE pet_stats SET energy = 80 WHERE id = ?').run(pet.id);
   }
   
+  // 确保计数字段有默认值
+  if (pet.today_feed_count === null || pet.today_feed_count === undefined) {
+    pet.today_feed_count = 0;
+  }
+  if (pet.today_pet_count === null || pet.today_pet_count === undefined) {
+    pet.today_pet_count = 0;
+  }
+  if (pet.today_walk_count === null || pet.today_walk_count === undefined) {
+    pet.today_walk_count = 0;
+  }
+  if (pet.today_clean_count === null || pet.today_clean_count === undefined) {
+    pet.today_clean_count = 0;
+  }
+  
+  // 确保皮肤字段有默认值
+  if (!pet.skin) {
+    pet.skin = 'default';
+    db.prepare("UPDATE pet_stats SET skin = 'default' WHERE id = ?").run(pet.id);
+  }
+  
+  // 如果日期变了，重置每日计数器
+  const today = new Date().toISOString().split('T')[0];
+  if (pet.diary_date !== today) {
+    db.prepare(`
+      UPDATE pet_stats 
+      SET today_feed_count = 0, today_pet_count = 0, today_walk_count = 0, today_clean_count = 0,
+          diary_date = ?
+      WHERE id = ?
+    `).run(today, pet.id);
+    pet.today_feed_count = 0;
+    pet.today_pet_count = 0;
+    pet.today_walk_count = 0;
+    pet.today_clean_count = 0;
+    pet.diary_date = today;
+  }
+  
   return pet;
 };
 
+// 增加互动次数
+const incrementCount = (petId, field) => {
+  db.prepare(`UPDATE pet_stats SET ${field} = ${field} + 1 WHERE id = ?`).run(petId);
+};
+
 // GET /api/pet/stats
-export const getStats = (req, res) => {
+export const getStats = async (req, res) => {
   try {
-    let pet = ensurePetInitialized();
+    const userId = req.user.userId;
+    let pet = ensurePetInitialized(userId);
     pet = applyDecay(pet);
     
     // 保存衰减后的状态
@@ -174,10 +217,14 @@ export const getStats = (req, res) => {
     const name = pet.pet_name || '';
     const message = generateMoodMessage(pet);
     
+    // 获取天气信息
+    const { weather } = await getWeatherMultiplier();
+    
     res.json({
       ...pet,
       pet_name: name,
       mood_message: message,
+      weather,
       cooldowns: {
         feed: remainingCooldown(pet.last_feed_at, COOLDOWN.feed),
         pet: remainingCooldown(pet.last_pet_at, COOLDOWN.pet),
@@ -192,15 +239,18 @@ export const getStats = (req, res) => {
 };
 
 // POST /api/pet/feed
-export const feedPet = (req, res) => {
+export const feedPet = async (req, res) => {
   try {
-    let pet = ensurePetInitialized();
+    const userId = req.user.userId;
+    let pet = ensurePetInitialized(userId);
     pet = applyDecay(pet);
     
     if (!isCooledDown(pet.last_feed_at, COOLDOWN.feed)) {
       const remaining = remainingCooldown(pet.last_feed_at, COOLDOWN.feed);
       return res.status(429).json({ error: `喂食冷却中，请等 ${remaining} 秒`, cooldown: remaining });
     }
+    
+    const { happinessMultiplier, weather } = await getWeatherMultiplier();
     
     let message;
     let newSatiety;
@@ -212,8 +262,10 @@ export const feedPet = (req, res) => {
       message = '⚠️ 狗狗吃撑了，有点不舒服！愉悦度下降';
     } else {
       newSatiety = clamp(pet.satiety + 15);
-      newHappiness = clamp(pet.happiness + 2);
-      message = '喂食成功，狗狗吃饱啦！';
+      const baseHappinessGain = 2;
+      const weatheredGain = Math.round(baseHappinessGain * happinessMultiplier);
+      newHappiness = clamp(pet.happiness + weatheredGain);
+      message = `喂食成功，狗狗吃饱啦！${weather.weatherType === 'sunny' ? '☀️ 好天气让它更开心！' : weather.weatherType === 'rainy' ? '🌧️ 下雨天它有点不开心...' : ''}`;
     }
     
     const now = new Date().toISOString();
@@ -222,6 +274,8 @@ export const feedPet = (req, res) => {
       SET satiety=?, happiness=?, last_feed_at=?, last_decay_at=?
       WHERE id=?
     `).run(newSatiety, newHappiness, now, pet.last_decay_at, pet.id);
+    
+    incrementCount(pet.id, 'today_feed_count');
     
     pet.satiety = newSatiety;
     pet.happiness = newHappiness;
@@ -233,7 +287,8 @@ export const feedPet = (req, res) => {
       intimacy: pet.intimacy,
       cleanliness: pet.cleanliness,
       energy: pet.energy,
-      mood_message: generateMoodMessage(pet)
+      mood_message: generateMoodMessage(pet),
+      weather
     });
   } catch (err) {
     console.error('喂食失败:', err.message);
@@ -242,9 +297,10 @@ export const feedPet = (req, res) => {
 };
 
 // POST /api/pet/pet
-export const petPet = (req, res) => {
+export const petPet = async (req, res) => {
   try {
-    let pet = ensurePetInitialized();
+    const userId = req.user.userId;
+    let pet = ensurePetInitialized(userId);
     pet = applyDecay(pet);
     
     if (!isCooledDown(pet.last_pet_at, COOLDOWN.pet)) {
@@ -252,9 +308,20 @@ export const petPet = (req, res) => {
       return res.status(429).json({ error: `抚摸冷却中，请等 ${remaining} 秒`, cooldown: remaining });
     }
     
-    const newHappiness = clamp(pet.happiness + 8);
+    const { happinessMultiplier, weather } = await getWeatherMultiplier();
+    
+    const baseHappinessGain = 8;
+    const weatheredGain = Math.round(baseHappinessGain * happinessMultiplier);
+    const newHappiness = clamp(pet.happiness + weatheredGain);
     const newIntimacy = clamp(pet.intimacy + 5);
     const now = new Date().toISOString();
+    
+    let weatherMsg = '';
+    if (weather.weatherType === 'sunny') {
+      weatherMsg = '☀️ 阳光明媚，狗狗特别享受！';
+    } else if (weather.weatherType === 'rainy') {
+      weatherMsg = '🌧️ 下雨天狗狗心情一般...';
+    }
     
     db.prepare(`
       UPDATE pet_stats 
@@ -262,17 +329,20 @@ export const petPet = (req, res) => {
       WHERE id=?
     `).run(newHappiness, newIntimacy, now, pet.last_decay_at, pet.id);
     
+    incrementCount(pet.id, 'today_pet_count');
+    
     pet.happiness = newHappiness;
     pet.intimacy = newIntimacy;
     
     res.json({
-      message: '抚摸成功，狗狗很开心！',
+      message: `抚摸成功，狗狗很开心！${weatherMsg}`,
       satiety: pet.satiety,
       happiness: newHappiness,
       intimacy: newIntimacy,
       cleanliness: pet.cleanliness,
       energy: pet.energy,
-      mood_message: generateMoodMessage(pet)
+      mood_message: generateMoodMessage(pet),
+      weather
     });
   } catch (err) {
     console.error('抚摸失败:', err.message);
@@ -281,9 +351,10 @@ export const petPet = (req, res) => {
 };
 
 // POST /api/pet/walk
-export const walkPet = (req, res) => {
+export const walkPet = async (req, res) => {
   try {
-    let pet = ensurePetInitialized();
+    const userId = req.user.userId;
+    let pet = ensurePetInitialized(userId);
     pet = applyDecay(pet);
     
     if (!isCooledDown(pet.last_walk_at, COOLDOWN.walk)) {
@@ -291,9 +362,13 @@ export const walkPet = (req, res) => {
       return res.status(429).json({ error: `散步冷却中，请等 ${remaining} 秒`, cooldown: remaining });
     }
     
+    const { happinessMultiplier, weather } = await getWeatherMultiplier();
+    
     const energyPenalty = pet.energy < 20;
-    const cleanlinessDrop = energyPenalty ? 8 : 12;
-    const energyDrop = energyPenalty ? 15 : 8;
+    // 雨天散步清洁度下降更多
+    const baseCleanlinessDrop = weather.weatherType === 'rainy' ? 18 : 12;
+    const cleanlinessDrop = energyPenalty ? Math.round(baseCleanlinessDrop * 0.7) : baseCleanlinessDrop;
+    const energyDrop = energyPenalty ? 15 : (weather.weatherType === 'rainy' ? 12 : 8);
     
     let newCleanliness = clamp(pet.cleanliness - cleanlinessDrop);
     let newEnergy = clamp(pet.energy - energyDrop);
@@ -307,17 +382,34 @@ export const walkPet = (req, res) => {
       event = 'tired';
       message = '狗狗太累了，散步没什么精神...';
       happiness = clamp(pet.happiness - 3);
+    } else if (weather.weatherType === 'rainy') {
+      // 雨天散步：愉悦度下降
+      happiness = clamp(pet.happiness - 5);
+      event = 'rainy';
+      message = '🌧️ 下雨散步，狗狗全身湿透了，心情不好...';
+      newCleanliness = clamp(newCleanliness - 5);
     } else if (r === 0) {
-      happiness = clamp(pet.happiness + 3);
+      const gain = Math.round(3 * happinessMultiplier);
+      happiness = clamp(pet.happiness + gain);
       event = 'bone';
-      message = '🦴 散步时找到一块骨头！愉悦度 +3';
+      message = weather.weatherType === 'sunny' 
+        ? `🦴 好天气！散步时找到一块骨头！愉悦度 +${gain}`
+        : `🦴 散步时找到一块骨头！愉悦度 +${gain}`;
     } else if (r === 1) {
       intimacy = clamp(pet.intimacy + 10);
       event = 'friend';
-      message = '🤝 交到一只新朋友！亲密度 +10';
+      message = weather.weatherType === 'sunny'
+        ? '🤝 阳光明媚！交到一只新朋友！亲密度 +10'
+        : '🤝 交到一只新朋友！亲密度 +10';
     } else {
       event = 'nothing';
-      message = '今天很安静';
+      message = weather.weatherType === 'sunny' 
+        ? '☀️ 今天天气很好，散步很愉快'
+        : '今天很安静';
+      // 好天气给基础愉悦加成
+      if (weather.weatherType === 'sunny') {
+        happiness = clamp(pet.happiness + Math.round(2 * happinessMultiplier));
+      }
     }
     
     const now = new Date().toISOString();
@@ -326,6 +418,8 @@ export const walkPet = (req, res) => {
       SET happiness=?, intimacy=?, cleanliness=?, energy=?, last_walk_at=?, last_decay_at=?
       WHERE id=?
     `).run(happiness, intimacy, newCleanliness, newEnergy, now, pet.last_decay_at, pet.id);
+    
+    incrementCount(pet.id, 'today_walk_count');
     
     pet.happiness = happiness;
     pet.intimacy = intimacy;
@@ -340,7 +434,8 @@ export const walkPet = (req, res) => {
       intimacy,
       cleanliness: newCleanliness,
       energy: newEnergy,
-      mood_message: generateMoodMessage(pet)
+      mood_message: generateMoodMessage(pet),
+      weather
     });
   } catch (err) {
     console.error('遛狗失败:', err.message);
@@ -349,9 +444,10 @@ export const walkPet = (req, res) => {
 };
 
 // POST /api/pet/clean
-export const cleanPet = (req, res) => {
+export const cleanPet = async (req, res) => {
   try {
-    let pet = ensurePetInitialized();
+    const userId = req.user.userId;
+    let pet = ensurePetInitialized(userId);
     pet = applyDecay(pet);
     
     if (!isCooledDown(pet.last_clean_at, COOLDOWN.clean)) {
@@ -359,9 +455,20 @@ export const cleanPet = (req, res) => {
       return res.status(429).json({ error: `洗澡冷却中，请等 ${remaining} 秒`, cooldown: remaining });
     }
     
+    const { happinessMultiplier, weather } = await getWeatherMultiplier();
+    
     const newCleanliness = clamp(pet.cleanliness + 30);
-    const newHappiness = clamp(pet.happiness + 5);
+    const baseHappinessGain = 5;
+    const weatheredGain = Math.round(baseHappinessGain * happinessMultiplier);
+    const newHappiness = clamp(pet.happiness + weatheredGain);
     const now = new Date().toISOString();
+    
+    let weatherMsg = '';
+    if (weather.weatherType === 'rainy') {
+      weatherMsg = '🌧️ 下雨天洗澡，狗狗不太开心...';
+    } else if (weather.weatherType === 'sunny') {
+      weatherMsg = '☀️ 好天气！洗完澡狗狗特别舒服~';
+    }
     
     db.prepare(`
       UPDATE pet_stats 
@@ -369,17 +476,20 @@ export const cleanPet = (req, res) => {
       WHERE id=?
     `).run(newCleanliness, newHappiness, now, pet.last_decay_at, pet.id);
     
+    incrementCount(pet.id, 'today_clean_count');
+    
     pet.cleanliness = newCleanliness;
     pet.happiness = newHappiness;
     
     res.json({
-      message: '🛁 洗澡成功！狗狗变干净啦~',
+      message: `🛁 洗澡成功！狗狗变干净啦~ ${weatherMsg}`,
       satiety: pet.satiety,
       happiness: newHappiness,
       intimacy: pet.intimacy,
       cleanliness: newCleanliness,
       energy: pet.energy,
-      mood_message: generateMoodMessage(pet)
+      mood_message: generateMoodMessage(pet),
+      weather
     });
   } catch (err) {
     console.error('洗澡失败:', err.message);
@@ -390,15 +500,35 @@ export const cleanPet = (req, res) => {
 // POST /api/pet/rename
 export const renamePet = (req, res) => {
   try {
+    const userId = req.user.userId;
     const { name } = req.body;
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: '名字不能为空' });
     }
     const trimmedName = name.trim().slice(0, 20);
-    db.prepare('UPDATE pet_stats SET pet_name = ? ORDER BY id LIMIT 1').run(trimmedName);
+    db.prepare('UPDATE pet_stats SET pet_name = ? WHERE user_id = ?').run(trimmedName, userId);
     res.json({ message: `取名成功！狗狗现在叫「${trimmedName}」`, pet_name: trimmedName });
   } catch (err) {
     console.error('取名失败:', err.message);
     res.status(500).json({ error: '取名失败', detail: err.message });
+  }
+};
+
+// 允许的皮肤列表
+const ALLOWED_SKINS = ['default', 'hat', 'cape'];
+
+// POST /api/pet/skin
+export const changeSkin = (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { skin } = req.body;
+    if (!skin || !ALLOWED_SKINS.includes(skin)) {
+      return res.status(400).json({ error: '无效的皮肤类型' });
+    }
+    db.prepare('UPDATE pet_stats SET skin = ? WHERE user_id = ?').run(skin, userId);
+    res.json({ message: `皮肤已切换为「${skin}」`, skin });
+  } catch (err) {
+    console.error('切换皮肤失败:', err.message);
+    res.status(500).json({ error: '切换皮肤失败', detail: err.message });
   }
 };
