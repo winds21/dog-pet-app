@@ -1,0 +1,18 @@
+# Railway/Nixpacks 配置
+# 告诉构建系统这是一个 Node.js 项目，源码在 backend/ 目录
+
+[nixpacks]
+# 设置项目根目录为 backend
+project_dir = "backend"
+
+# 构建命令
+[build]
+command = "npm install"
+
+# 启动命令
+[start]
+command = "node src/app.js"
+
+# Node.js 版本
+[node]
+version = "20"

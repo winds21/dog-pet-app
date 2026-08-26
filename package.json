@@ -1,0 +1,13 @@
+﻿{
+  "name": "dog-pet-app",
+  "version": "1.0.0",
+  "description": "狗狗养成互动项目",
+  "private": true,
+  "scripts": {
+    "start": "cd backend && node src/app.js",
+    "build": "cd backend && npm install"
+  },
+  "engines": {
+    "node": "20"
+  }
+}
