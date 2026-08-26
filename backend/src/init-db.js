@@ -50,7 +50,7 @@ const init = () => {
     }
 
     console.log('\n🎉 SQLite 数据库初始化完成！');
-    console.log('   数据库文件: data/pet.db');
+    console.log('   存储路径: 自动检测（Cyclic 持久化 / 本地 data/）');
     console.log('   完全免费，无需任何配置');
   } catch (err) {
     console.error('❌ 初始化失败:', err.message);

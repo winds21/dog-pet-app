@@ -1,0 +1,15 @@
+# Cyclic.sh 部署配置
+# 免费 Node.js 托管，支持 SQLite 持久化存储
+
+[build]
+# 构建命令（Cyclic 会自动运行 npm install）
+command = "npm install"
+
+[run]
+# 启动命令
+command = "node src/app.js"
+
+# SQLite 数据持久化目录（Cyclic 会自动挂载持久存储）
+[storage]
+# 如果使用 Cyclic 提供的持久化存储，数据会在重启后保留
+# backend/data/ 目录会被自动持久化
